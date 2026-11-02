@@ -1,0 +1,15 @@
+{
+ "_note": "Manual fixes for the iOS/Android merge. merge: force a pair of store keys into one app. split: forbid a pair. Pairs are [ios key, android key].",
+ "merge": [
+  [
+   "ios:520480364",
+   "android:org.xbmc.kore"
+  ]
+ ],
+ "split": [
+  [
+   "ios:763692274",
+   "android:com.rockstargames.gtavc"
+  ]
+ ]
+}
