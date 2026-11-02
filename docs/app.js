@@ -62,12 +62,12 @@ const latest = mode => mode === 'year' ? todayDay : range(mode, todayDay)[0] - 1
 const earliest = mode => range(mode, firstDay)[0];
 const clamp = (mode, a) => range(mode, a)[1] > limitEnd(mode) ? range(mode, latest(mode))[0] : a < earliest(mode) ? earliest(mode) : range(mode, a)[0];
 function inPeriod(a, s, e) {               // period mentions, period score (weights + distinct outside users), period submission points
-  let n = 0, k = 0, p = 0, x = 0; const us = new Set();
+  let n = 0, k = 0, p = 0, x = 0, l = 0; const us = new Set();
   for (let i = 0; i < a.t.length; i++) {
     const d = a.t[i]; if (d >= e) break;
-    if (d >= s) { n++; k += a.w[i]; p += a.pt[i]; x |= a.sh[i]; if (a.uu[i] >= 0) us.add(a.uu[i]); }
+    if (d >= s) { n++; k += a.w[i]; p += a.pt[i]; x |= a.sh[i]; l = d; if (a.uu[i] >= 0) us.add(a.uu[i]); }
   }
-  a.pm = n; a.pk = k + us.size; a.ph = p; a.px = x; return n;
+  a.pm = n; a.pk = k + us.size; a.ph = p; a.px = x; a.pl = l * 86400 + 43200; return n;   // pl: latest mention in the period, noon UTC of its day
 }
 
 // ---- state ----
@@ -79,7 +79,7 @@ const SORTS = {
   score: {label: 'HN score', v: (a, per) => per ? a.pk : a.k, show: (a, per) => Math.round(per ? a.pk : a.k)},
   mentions: {label: 'Most mentioned', v: (a, per) => per ? a.pm : a.m, show: (a, per) => (per ? a.pm : a.m).toLocaleString('en-US')},
   points: {label: 'Most HN points', v: (a, per) => per ? a.ph : a.h, show: (a, per) => fmt(per ? a.ph : a.h)},
-  recent: {label: 'Recently mentioned', v: a => a.l, show: a => `<span class="dt">${mon(a.l)}</span>`},
+  recent: {label: 'Recently mentioned', v: (a, per) => per ? a.pl : a.l, show: (a, per) => `<span class="dt">${mon(per ? a.pl : a.l)}</span>`},
   newest: {label: 'Newest on HN', v: a => a.f, show: a => `<span class="dt">${mon(a.f)}</span>`},
   rating: {label: 'Highest rated', v: a => a.r || 0, show: a => `<span class="dt">${stars(a.r)}</span>`, filter: a => a.c >= 100},
   loved: {label: 'Most loved', v: a => a.pp || 0, show: a => `<span class="dt">${moodPct('up', a.pp)}</span>`, filter: a => a.mo === 1},
