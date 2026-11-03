@@ -67,7 +67,7 @@ select:hover{background-color:var(--soft-2);color:var(--fg)}
 .menu.sort{margin-left:auto;color:var(--fg);font-weight:500}
 .count{color:var(--gray);font-size:.875rem;margin:.75rem 0 0}
 .list{margin-top:0}
-.row{display:grid;grid-template-columns:1.75rem 52px minmax(0,1fr) 99px 5.5rem;column-gap:1rem;align-items:center;padding:.8125rem 0;position:relative;min-width:0;-webkit-tap-highlight-color:transparent}
+.row{display:grid;grid-template-columns:1.75rem 52px minmax(0,1fr) 99px 5.5rem;column-gap:1rem;align-items:center;padding:.8125rem 0;position:relative;min-width:0;background:var(--bg);-webkit-tap-highlight-color:transparent}
 .row::after{content:"";position:absolute;left:calc(2.75rem + 52px);right:0;bottom:0;border-bottom:.5px solid var(--hair)}
 .row:hover .ttl,.row:focus-visible .ttl{color:var(--orange-ink)}
 .row:active{opacity:.6}
@@ -105,6 +105,18 @@ select:hover{background-color:var(--soft-2);color:var(--fg)}
 @keyframes pulse{50%{opacity:.5}}
 .view{animation:fade 220ms var(--ease) both}
 @keyframes fade{from{opacity:0}to{opacity:1}}
+img.icon{transition:opacity 180ms var(--ease)}
+img.icon.wait{opacity:0}
+/* list switches: only rows on screen animate (they glide to their new rank on a critically damped spring); the rest of the page
+   is never captured, so the controls stay live and a second click mid-animation still lands */
+:root{view-transition-name:none}
+::view-transition{pointer-events:none}
+::view-transition-group(*){animation-duration:400ms;animation-timing-function:linear(0,.067,.205,.358,.499,.619,.715,.79,.848,.89,.921,.944,.96,.972,.981,.986,.991,.993,.995,.997,1)}
+::view-transition-old(*),::view-transition-new(*){animation-duration:180ms}
+::view-transition-old(*):only-child{animation:130ms var(--ease) both vt-out}   /* rows leaving go first, rows arriving follow: no doubled text */
+::view-transition-new(*):only-child{animation:220ms 50ms var(--ease) both vt-in}
+@keyframes vt-out{to{opacity:0}}
+@keyframes vt-in{from{opacity:0;transform:translateY(4px)}}
 .row.ad .rank{font-size:.75rem;font-weight:600;letter-spacing:.04em;color:var(--gray)}
 .row.ad .st{color:var(--gray)}
 

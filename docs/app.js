@@ -14,7 +14,7 @@ const linkify = raw => {                  // match URLs on the raw text, escape 
   return out + esc(s.slice(last));
 };
 const stars = r => r ? `<span class="star" aria-hidden="true">★</span><span class="sr">rated </span> ${r.toFixed(1)}` : '';
-const icon = a => `<span class="ico">${a.i || a.icon ? `<img class="icon" loading="lazy" src="${esc(a.i || a.icon)}" alt="">` : `<div class="icon ph" aria-hidden="true">${esc((a.n || a.name || '?')[0])}</div>`}</span>`;
+const icon = (a, lazy) => `<span class="ico">${a.i || a.icon ? `<img class="icon"${lazy ? ' loading="lazy"' : ''} src="${esc(a.i || a.icon)}" alt="">` : `<div class="icon ph" aria-hidden="true">${esc((a.n || a.name || '?')[0])}</div>`}</span>`;
 // thumbs icons: Lucide, ISC license (see LICENSE)
 const TH = {up: '<svg class="th" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>',
   down: '<svg class="th" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>'};
@@ -133,7 +133,72 @@ const MOODS = [['Any HN mood', 0], ['HN likes', 1], ['HN dislikes', -1]];
 function menu(id, label, options, cur, set, extra = '') {
   return `<label class="menu${set ? ' set' : ''}${extra}"><span aria-hidden="true">${esc(label)}</span><select id="${id}" aria-label="${esc(label)}">${options.map(([l, v]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
 }
-function renderList(focusId) {
+// ---- list updates in place: rows that stay keep their DOM and icons, rows on screen glide to their new rank ----
+const keyOf = n => n.nodeType === 1 ? n.id || n.getAttribute('href') || '' : '';
+const sig = n => n.nodeType === 1 ? n.nodeName + '.' + (n.getAttribute('class') || '').split(' ')[0] : n.nodeName;
+function morph(a, b) {                      // make node a look like b, keeping a's identity
+  if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+  if (a.tagName === 'IMG' && a.getAttribute('src') === b.getAttribute('src')) return;   // same icon: keep the loaded element as is
+  for (const {name} of [...a.attributes]) if (!b.hasAttribute(name)) a.removeAttribute(name);
+  for (const {name, value} of b.attributes) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  patch(a, b);
+  if (a.tagName === 'SELECT') a.value = b.value;
+}
+function patch(a, b) {                      // a's children := b's, reusing a's nodes: same id/href, else the next one of the same tag and class
+  const keyed = new Map();
+  for (const c of a.children) { const k = keyOf(c); if (k) keyed.set(k, c); }
+  let i = 0;
+  for (const nb of [...b.childNodes]) {
+    const k = keyOf(nb), at = a.childNodes[i];
+    let na = k ? keyed.get(k) : null;
+    if (!k) for (let c = at; c; c = c.nextSibling) if (!keyOf(c) && sig(c) === sig(nb)) { na = c; break; }
+    if (na && sig(na) === sig(nb)) { keyed.delete(k); morph(na, nb); } else na = nb;
+    if (na !== at) a.insertBefore(na, at || null);
+    i++;
+  }
+  while (a.childNodes.length > i) a.lastChild.remove();
+}
+function settle() {                         // icons that aren't loaded yet fade in instead of popping
+  for (const im of main.querySelectorAll('img.icon:not(.wait)')) if (!im.complete) {
+    const done = () => im.classList.remove('wait');
+    im.classList.add('wait'); im.addEventListener('load', done, {once: true}); im.addEventListener('error', done, {once: true});
+  }
+}
+const vtNames = new WeakMap(), vtLift = document.head.appendChild(document.createElement('style')); let vtSeq = 0, vtGen = 0, listRev = 0;
+function nameRows() {                       // only rows fully on screen, so a gliding row never crosses the sticky header (or the bar, where it sticks)
+  const top = Math.max($('.top').getBoundingClientRect().bottom, main.querySelector('.bar')?.getBoundingClientRect().bottom ?? 0), rows = [...main.querySelectorAll('.list > .row')];
+  const on = rows.map(r => { const b = r.getBoundingClientRect(); return b.top >= top && b.bottom <= innerHeight; });   // all reads before any write: one layout
+  const names = new Set();
+  rows.forEach((r, i) => {
+    if (on[i]) { if (!vtNames.has(r)) vtNames.set(r, 'r' + ++vtSeq); r.style.viewTransitionName = vtNames.get(r); names.add(vtNames.get(r)); }
+    else if (r.style.viewTransitionName) r.style.viewTransitionName = '';
+  });
+  return names;
+}
+function swap(html, glide, done) {
+  const rev = listRev, tok = navToken;      // a newer list render or another page makes this update stale before its frame comes
+  const apply = () => { if (rev !== listRev || tok !== navToken) return false; const t = document.createElement('template'); t.innerHTML = html; patch(main, t.content); settle(); done(); return true; };
+  if (!glide || !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) return apply();
+  const g = ++vtGen, before = nameRows();
+  const vt = document.startViewTransition(() => {
+    if (!apply()) return;
+    const moving = [...nameRows()].filter(n => before.has(n));   // rows on screen before and after travel above the ones fading
+    vtLift.textContent = moving.length ? moving.map(n => `::view-transition-group(${n})`).join(',') + '{z-index:1}' : '';
+  });
+  vt.ready.catch(() => {});                 // a newer switch skipped this one
+  vt.finished.then(() => { if (g === vtGen) main.querySelectorAll('.list > .row[style]').forEach(r => r.removeAttribute('style')); });
+}
+const warmed = new Set(), idle = window.requestIdleCallback || (f => setTimeout(f, 200));
+function warm(mode, anchor) {               // preload the top icons of a list the user is likely to open next
+  if (!DB) return;
+  const id = [mode, mode === 'all' ? '' : key(mode, anchor), state.sort, state.plat, state.mood, state.cat, state.q].join('|');
+  if (warmed.has(id)) return; warmed.add(id);
+  const keep = [state.mode, state.anchor]; state.mode = mode; state.anchor = anchor;
+  try { for (const a of filtered().list.slice(0, 15)) if (a.i) new Image().src = a.i; } finally { [state.mode, state.anchor] = keep; }
+}
+
+function renderList(focusId, glide) {
+  listRev++;
   const {list, total} = filtered(), shown = list.slice(0, state.limit), per = state.mode !== 'all';
   const lbl = per ? label(state.mode, state.anchor) : '';
   const heading = per ? `Top apps · ${lbl}` : 'Apps Hacker News talks about';
@@ -146,8 +211,7 @@ function renderList(focusId) {
   const filteredView = state.q || state.plat || state.mood || state.cat || SORTS[state.sort].filter;
   const count = filteredView ? `<p class="count">${plural(list.length, 'app')}${state.q ? ` matching “${esc(state.q)}”` : ''}${state.sort === 'rating' ? ', each with 100+ store ratings' : ''}${state.sort === 'loved' && !state.mood ? ' HN likes' : ''}</p>` : '';
   const empty = per && !total ? `No apps were linked on HN in ${lbl}.` : 'No apps found.';
-  main.className = 'wrap view'; main.style.animation = 'none'; void main.offsetWidth; main.style.animation = '';
-  main.innerHTML = `
+  const html = `
     <h1${per ? ' class="lb"' : ''}>${heading}${stepper}</h1><p class="sub">${sub}</p>
     <div class="bar">
       ${menu('plat', PLATS.find(x => x[1] === state.plat)[0], PLATS, state.plat, !!state.plat)}
@@ -158,20 +222,25 @@ function renderList(focusId) {
     ${count}
     <div class="list">${shown.length ? shown.map((a, i) => row(a, i + 1, per) + (i === 8 && showAd ? adRow() : '')).join('') : `<p class="empty">${empty}</p>`}</div>
     ${list.length > state.limit ? `<button class="more" id="more">More</button>` : ''}`;
-  const pv = $('#prev'), nx = $('#next');
-  if (pv) pv.onclick = () => step(-1);
-  if (nx) nx.onclick = () => step(1);
-  $('#plat').onchange = e => { state.plat = +e.target.value; state.limit = 60; renderList('plat'); };
-  $('#mood').onchange = e => { state.mood = +e.target.value; state.limit = 60; renderList('mood'); };
-  $('#cat').onchange = e => { state.cat = e.target.value || null; state.limit = 60; renderList('cat'); };
-  $('#sort').onchange = e => { state.sort = e.target.value; state.limit = 60; renderList('sort'); };
-  const m = $('#more');
-  if (m) m.onclick = () => {
-    const before = state.limit; state.limit += 60; renderList();
-    const first = main.querySelectorAll('.list .row:not(.ad)')[before]; if (first) first.focus({preventScroll: true});
+  const wire = () => {
+    const pv = $('#prev'), nx = $('#next');
+    if (pv) pv.onclick = () => step(-1);
+    if (nx) nx.onclick = () => step(1);
+    $('#plat').onchange = e => { state.plat = +e.target.value; state.limit = 60; renderList('plat', true); };
+    $('#mood').onchange = e => { state.mood = +e.target.value; state.limit = 60; renderList('mood', true); };
+    $('#cat').onchange = e => { state.cat = e.target.value || null; state.limit = 60; renderList('cat', true); };
+    $('#sort').onchange = e => { state.sort = e.target.value; state.limit = 60; renderList('sort', true); };
+    const m = $('#more');
+    if (m) m.onclick = () => {
+      const before = state.limit; state.limit += 60; renderList();
+      const first = main.querySelectorAll('.list .row:not(.ad)')[before]; if (first) first.focus({preventScroll: true});
+    };
+    if (focusId && !main.contains(document.activeElement)) { const f = $('#' + focusId); if (f) f.focus({preventScroll: true}); }   // only if the update lost it
   };
-  if (focusId) { const f = $('#' + focusId); if (f) f.focus({preventScroll: true}); }
+  if (main.querySelector(':scope > .list')) swap(html, glide, wire);
+  else { fadeIn(); main.innerHTML = html; settle(); wire(); }   // arriving from another page: fade the whole view in once
   setNav();
+  if (per) idle(() => { const [s, e] = range(state.mode, state.anchor); if (s > earliest(state.mode)) warm(state.mode, s - 1); if (e < limitEnd(state.mode)) warm(state.mode, e); });
 }
 function step(dir) {
   const [s, e] = range(state.mode, state.anchor);
@@ -200,7 +269,7 @@ function row(a, rank, per) {
   const moodLine = mood && state.sort !== 'loved' ? moodPct(mood, mood === 'up' ? a.pp : a.pq) : '';
   if (moodLine) hn.push(moodLine);
   const hi = per ? dUTC(range(state.mode, state.anchor)[0]).getUTCFullYear() : 0;
-  return `<a class="row" href="#/app/${a.s}"><span class="rank">${rank}</span>${icon(a)}
+  return `<a class="row" href="#/app/${a.s}"><span class="rank">${rank}</span>${icon(a, rank > 12)}
     <span class="meta"><span class="ttl">${esc(a.n)}</span><span class="st">${hn.map(x => `<span class="it">${x}</span>`).join(' ')}</span><span class="st2">${store.map(x => `<span class="it">${x}</span>`).join(' ')}</span></span>
     ${spark(a, hi)}<span class="num"><b>${s.show(a, per)}</b>${moodLine}</span></a>`;
 }
@@ -343,8 +412,8 @@ async function route() {
   } else state.mode = 'all';
   lastListHash = location.hash || '#/';
   document.title = 'HN Apps · Apps Hacker News talks about';
-  renderList();
-  window.scrollTo(0, prevKind === 'app' && savedScroll[lastListHash] != null ? savedScroll[lastListHash] : prevKind === 'list' ? window.scrollY : 0);
+  renderList(null, true);
+  window.scrollTo({top: prevKind === 'app' && savedScroll[lastListHash] != null ? savedScroll[lastListHash] : prevKind === 'list' ? window.scrollY : 0, behavior: 'instant'});
 }
 
 let qt; $('#q').addEventListener('input', e => {
@@ -352,6 +421,7 @@ let qt; $('#q').addEventListener('input', e => {
   qt = setTimeout(() => { state.q = e.target.value.trim(); state.limit = 60; if (routeKind !== 'list') location.hash = '#/'; else if (DB) renderList(); else route(); }, 120);
 });
 window.addEventListener('hashchange', route);
+$('#nav').addEventListener('pointerover', e => { const k = e.target.closest('a')?.dataset.nav; if (k === '') warm('all', 0); else if (k === 'week' || k === 'month' || k === 'year') warm(k, latest(k)); });
 document.addEventListener('keydown', e => {
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   const typing = /input|select|textarea/i.test(e.target.tagName);
