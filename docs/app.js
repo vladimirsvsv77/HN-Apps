@@ -381,6 +381,8 @@ async function renderAbout(token) {
     <h2>Data</h2>
     <p>HN data comes from the public HN dump and the <a href="https://hn.algolia.com/api" rel="noopener">Algolia HN API</a>. Store details come from the iTunes Lookup API and Google Play. All ${all} mentions are in <a href="data/mentions.jsonl.gz">data/mentions.jsonl.gz</a> (CC BY 4.0, schema in <a href="data/DATA.md">DATA.md</a>). ${listed} of them point to apps still on a store, and those carry sentiment labels and make up the lists. Per-app files are in <code>data/app/*.json</code>.</p>
     <p>Keyboard: <kbd>/</kbd> to search, <kbd>←</kbd> <kbd>→</kbd> to step through weeks, months or years.</p>
+    <h2>Source</h2>
+    <p>The code is on <a href="https://github.com/vladimirsvsv77/HN-Apps" rel="noopener">GitHub</a>. Found a bug or have an idea? Open an <a href="https://github.com/vladimirsvsv77/HN-Apps/issues" rel="noopener">issue</a> or a <a href="https://github.com/vladimirsvsv77/HN-Apps/pulls" rel="noopener">pull request</a>.</p>
     <p>Inspired by <a href="https://hackertube.org" rel="noopener">HackerTube</a> and <a href="https://hackerbooks.org" rel="noopener">HackerBooks</a>.</p>
   </div>`;
   window.scrollTo(0, 0);
